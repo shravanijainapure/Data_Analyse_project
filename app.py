@@ -1,23 +1,30 @@
-import streamlit as pd
-import streamlit as st
+import os
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import joblib
-import numpy as np
+import streamlit as st
 
-# Set layout page
+# 1. SET PAGE CONFIGURATION
 st.set_page_config(page_title="Corporate Workforce Analytics", layout="wide")
 st.title("📊 Enterprise Workforce Analytics & Attrition Dashboard")
 
-# Load data and saved models
+# 2. RESOLVE ABSOLUTE PATHS FOR REPOSITORY DEPLOYMENT
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 3. LOAD DATASET AND MACHINE LEARNING ARTIFACTS SECURELY
 @st.cache_data
 def load_data():
-    return pd.read_csv("WA_Fn-UseC_-HR-Employee-Attrition.csv")
+    return pd.read_csv(os.path.join(BASE_DIR, "WA_Fn-UseC_-HR-Employee-Attrition.csv"))
 
-df = load_data()
-model = joblib.load("attrition_model.pkl")
-encoders = joblib.load("label_encoders.pkl")
-feature_cols = joblib.load("feature_columns.pkl")
+try:
+    df = load_data()
+    model = joblib.load(os.path.join(BASE_DIR, "attrition_model.pkl"))
+    encoders = joblib.load(os.path.join(BASE_DIR, "label_encoders.pkl"))
+    feature_cols = joblib.load(os.path.join(BASE_DIR, "feature_columns.pkl"))
+except FileNotFoundError as e:
+    st.error(f"❌ Initialization Error: Could not load data or model files. Details: {e}")
+    st.stop()
 
 # --- SIDEBAR FILTERS ---
 st.sidebar.header("Dashboard Filters")
@@ -34,7 +41,7 @@ filtered_df = df[(df["Department"].isin(department_filter)) & (df["Gender"].isin
 # --- KPI METRICS ---
 total_emp = len(filtered_df)
 attrition_rate = (filtered_df["Attrition"] == "Yes").sum() / total_emp * 100 if total_emp > 0 else 0
-avg_satisfaction = filtered_df["JobSatisfaction"].mean()
+avg_satisfaction = filtered_df["JobSatisfaction"].mean() if total_emp > 0 else 0
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Headcount", f"{total_emp}")
@@ -56,7 +63,6 @@ with chart_col2:
     st.subheader("Attrition Count by Job Role")
     fig2 = px.histogram(filtered_df, x="JobRole", color="Attrition", barmode="group",
                          color_discrete_map={"Yes": "#EF553B", "No": "#636EFA"})
-    st.xticks = st.set_page_config # clean up display labels
     st.plotly_chart(fig2, use_container_width=True)
 
 st.markdown("---")
@@ -73,7 +79,8 @@ with sim_col1:
     sim_hike = st.slider("Percent Salary Hike", 10, 25, 14)
 
 with sim_col2:
-    sim_income = st.slider("Monthly Income ($)", 1000, 20000, 50000)
+    # Max bound updated to 25000 to match realistic monthly constraints of the dataset
+    sim_income = st.slider("Monthly Income ($)", 1000, 25000, 5000)
     sim_years = st.slider("Years At Company", 0, 40, 5)
     sim_travel = st.selectbox("Business Travel", ["Travel_Rarely", "Travel_Frequently", "Non-Travel"])
 
@@ -99,7 +106,7 @@ if st.button("Run Attrition Risk Assessment"):
     input_data['BusinessTravel'] = encoders['BusinessTravel'].transform([sim_travel])[0]
     input_data['JobRole'] = encoders['JobRole'].transform([sim_role])[0]
     
-    # Convert input structure to DataFrame vector
+    # Convert input structure to DataFrame vector aligned with the model features
     input_df = pd.DataFrame([input_data])[feature_cols]
     
     # Predict Probability
